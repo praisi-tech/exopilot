@@ -45,3 +45,8 @@ apps/api/api.exe
 .secrets/
 secrets.json
 secrets.yaml
+
+# Local database/admin setup scripts (untracked for security)
+scripts/create-user.go
+scripts/make-admin.mjs
+scripts/seed-firebase.mjs
