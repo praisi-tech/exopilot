@@ -427,7 +427,9 @@ Requirements:
       doc.setLineWidth(0.2);
       doc.rect(boxX, y - 2, boxW, boxH);
       
+      const halfW = boxW * 0.5 - 8; // usable width per half-cell
       let boxY = y + 2.5;
+      
       // Ref No
       doc.setFont("helvetica", "bold");
       doc.setFontSize(6);
@@ -436,7 +438,8 @@ Requirements:
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7.5);
       doc.setTextColor(15, 23, 42);
-      doc.text(parsed.refNumber || "—", boxX + 4, boxY + 4.5);
+      const refLines = doc.splitTextToSize(parsed.refNumber || "\u2014", halfW);
+      doc.text(refLines, boxX + 4, boxY + 4.5);
       
       // Issue Date
       doc.setFont("helvetica", "bold");
@@ -446,7 +449,8 @@ Requirements:
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7.5);
       doc.setTextColor(15, 23, 42);
-      doc.text(parsed.issueDate || todayStr(), boxX + boxW * 0.5 + 2, boxY + 4.5);
+      const issueDateLines = doc.splitTextToSize(parsed.issueDate || todayStr(), halfW);
+      doc.text(issueDateLines, boxX + boxW * 0.5 + 2, boxY + 4.5);
       
       // Expiry Date
       doc.setFont("helvetica", "bold");
@@ -456,18 +460,21 @@ Requirements:
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7.5);
       doc.setTextColor(15, 23, 42);
-      doc.text(parsed.expiryDate || "—", boxX + 4, boxY + 16);
+      const expiryLines = doc.splitTextToSize(parsed.expiryDate || "\u2014", halfW);
+      doc.text(expiryLines, boxX + 4, boxY + 16);
       
       // Other Metadata if any
       if (parsed.otherMetadata.length > 0) {
         doc.setFont("helvetica", "bold");
         doc.setFontSize(6);
         doc.setTextColor(148, 163, 184);
-        doc.text(parsed.otherMetadata[0].key.toUpperCase(), boxX + boxW * 0.5 + 2, boxY + 11.5);
+        const otherKeyLines = doc.splitTextToSize(parsed.otherMetadata[0].key.toUpperCase(), halfW);
+        doc.text(otherKeyLines, boxX + boxW * 0.5 + 2, boxY + 11.5);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(7.5);
         doc.setTextColor(15, 23, 42);
-        doc.text(parsed.otherMetadata[0].value, boxX + boxW * 0.5 + 2, boxY + 16);
+        const otherValLines = doc.splitTextToSize(parsed.otherMetadata[0].value, halfW);
+        doc.text(otherValLines, boxX + boxW * 0.5 + 2, boxY + 16);
       }
 
       y = Math.max(buyerY + 4.5 + impLines.length * 3.5 + 5, y - 2 + boxH + 5);
@@ -611,8 +618,9 @@ Requirements:
           doc.setFontSize(10);
           doc.setTextColor(15, 23, 42);
           const text = trimmed.substring(2).replace(/\*\*/g, "");
-          doc.text(text.toUpperCase(), margin, y + 5);
-          y += 6;
+          const h1Lines = doc.splitTextToSize(text.toUpperCase(), contentW);
+          doc.text(h1Lines, margin, y + 5);
+          y += 6 + (h1Lines.length - 1) * 6;
           doc.setDrawColor(199, 210, 254);
           doc.line(margin, y, margin + 40, y);
           y += 6;
@@ -626,8 +634,9 @@ Requirements:
           doc.setFontSize(8.5);
           doc.setTextColor(30, 41, 59);
           const offset = trimmed.startsWith("## ") ? 3 : 4;
-          doc.text(trimmed.substring(offset).replace(/\*\*/g, "").toUpperCase(), margin, y + 4);
-          y += 8;
+          const hLines = doc.splitTextToSize(trimmed.substring(offset).replace(/\*\*/g, "").toUpperCase(), contentW);
+          doc.text(hLines, margin, y + 4);
+          y += 8 + (hLines.length - 1) * 5.5;
           continue;
         }
 
@@ -680,18 +689,21 @@ Requirements:
 
         // Blockquote
         if (trimmed.startsWith(">")) {
-          checkPage(8);
-          doc.setFillColor(238, 242, 255);
-          doc.rect(margin, y - 1, contentW, 7, "F");
-          doc.setDrawColor(99, 102, 241);
-          doc.setLineWidth(0.8);
-          doc.line(margin, y - 1, margin, y + 6);
-          doc.setLineWidth(0.2);
           doc.setFont("helvetica", "italic");
           doc.setFontSize(7.5);
+          const bqText = trimmed.substring(1).trim().replace(/\*\*/g, "");
+          const bqLines = doc.splitTextToSize(bqText, contentW - 6);
+          const bqH = Math.max(7, bqLines.length * 4.5 + 3);
+          checkPage(bqH + 2);
+          doc.setFillColor(238, 242, 255);
+          doc.rect(margin, y - 1, contentW, bqH, "F");
+          doc.setDrawColor(99, 102, 241);
+          doc.setLineWidth(0.8);
+          doc.line(margin, y - 1, margin, y - 1 + bqH);
+          doc.setLineWidth(0.2);
           doc.setTextColor(51, 65, 85);
-          doc.text(trimmed.substring(1).trim().replace(/\*\*/g, ""), margin + 3, y + 4);
-          y += 10;
+          doc.text(bqLines, margin + 3, y + 4);
+          y += bqH + 3;
           continue;
         }
 
