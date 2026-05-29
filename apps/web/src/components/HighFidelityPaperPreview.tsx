@@ -1,15 +1,18 @@
 "use client";
 
 import React from "react";
+import { parseDocumentMetadata } from "./AIDocStudio";
 
 interface HighFidelityPaperPreviewProps {
   docText: string;
   docType: string;
   businessName?: string;
+  signatoryName?: string;
 }
 
-export function HighFidelityPaperPreview({ docText, docType, businessName }: HighFidelityPaperPreviewProps) {
-  const rawLines = docText.split("\n");
+export function HighFidelityPaperPreview({ docText, docType, businessName, signatoryName }: HighFidelityPaperPreviewProps) {
+  const parsed = parseDocumentMetadata(docText);
+  const rawLines = parsed.bodyText.split("\n");
   
   const elements: React.ReactNode[] = [];
   let currentTableRows: { cells: string[]; isHeader: boolean }[] = [];
@@ -202,6 +205,48 @@ export function HighFidelityPaperPreview({ docText, docType, businessName }: Hig
           </div>
         </div>
 
+        {/* Document Title & Reference Panel */}
+        <div className="mb-5 pb-4 border-b border-slate-100">
+          <h1 className="text-xs sm:text-sm font-black text-slate-900 tracking-wide uppercase mb-3">
+            {parsed.title || docType.toUpperCase()}
+          </h1>
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 text-[10px]">
+            {/* Left: Exporter & Importer */}
+            <div className="md:col-span-7 space-y-2">
+              <div>
+                <span className="text-slate-400 font-bold uppercase tracking-wider block text-[7.5px]">Exporter / Seller</span>
+                <span className="text-slate-800 font-semibold">{parsed.exporter || businessName || "PT REMPAH NUSANTARA ABADI"}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 font-bold uppercase tracking-wider block text-[7.5px]">Importer / Buyer</span>
+                <span className="text-slate-800 font-semibold">{parsed.importer || "—"}</span>
+              </div>
+            </div>
+            
+            {/* Right: Key Details Panel */}
+            <div className="md:col-span-5 bg-slate-50 rounded-xl p-3 border border-slate-150 grid grid-cols-2 gap-x-3 gap-y-2">
+              <div className="col-span-2 border-b border-slate-200/60 pb-1 mb-1">
+                <span className="text-slate-400 font-bold uppercase tracking-wider block text-[7px]">Reference No.</span>
+                <span className="text-slate-800 font-mono font-bold text-[10.5px]">{parsed.refNumber || "—"}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 font-bold uppercase tracking-wider block text-[7px]">Issue Date</span>
+                <span className="text-slate-700 font-semibold">{parsed.issueDate || "—"}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 font-bold uppercase tracking-wider block text-[7px]">Validity / Expiry</span>
+                <span className="text-slate-700 font-semibold">{parsed.expiryDate || "—"}</span>
+              </div>
+              {parsed.otherMetadata.map((m, idx) => (
+                <div key={idx} className="col-span-2 border-t border-slate-200/40 pt-1 mt-1 flex justify-between gap-2">
+                  <span className="text-slate-400 font-bold uppercase tracking-wider text-[7px] truncate">{m.key}</span>
+                  <span className="text-slate-700 font-semibold text-right truncate max-w-[120px]">{m.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
         {/* Parsed elements */}
         <div className="space-y-3 text-xs text-slate-700">
           {elements}
@@ -218,7 +263,7 @@ export function HighFidelityPaperPreview({ docText, docType, businessName }: Hig
           <div className="text-right flex flex-col items-end">
             <p className="text-slate-400 uppercase tracking-wider font-bold">Authorized Signatory</p>
             <div className="h-6 text-indigo-700 italic font-serif text-[13px] pr-2 mt-1.5 select-none leading-none flex items-end">
-              Praisilia Anastasya
+              {signatoryName || "Authorized Representative"}
             </div>
             <div className="h-[1px] w-24 bg-slate-300 my-0.5 font-sans" />
             <p className="text-[7.5px] text-slate-500 font-bold uppercase">{businessName || "PT REMPAH NUSANTARA ABADI"}</p>

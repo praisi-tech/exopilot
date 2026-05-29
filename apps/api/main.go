@@ -1280,9 +1280,9 @@ func (s *ExopilotServer) handleGenerateDocument(w http.ResponseWriter, r *http.R
 	country := or(body.DestinationCountry, "Netherlands")
 	price := or(body.Price, "[ _____________________ ]")
 	notes := body.NegotiationNotes
-	sellerName := or(body.BusinessName, "PT Rempah Nusantara Abadi")
 	dateStr := todayStr()
 	serialRef := fmt.Sprintf("EX-2026-%04d", rand.Intn(9000)+1000)
+	sellerName := or(body.BusinessName, "PT Rempah Nusantara Abadi")
 
 	// Live Gemini AI Generation via REST if API Key is set in backend
 	geminiKey := os.Getenv("GEMINI_API_KEY")
@@ -1298,7 +1298,7 @@ func (s *ExopilotServer) handleGenerateDocument(w http.ResponseWriter, r *http.R
 		}
 
 		systemPrompt := fmt.Sprintf(`You are Exopilot AI, a world-class international trade documentation expert.
-Generate a professional, fully-detailed export %s document for:
+Generate a professional, fully-detailed, realistic export %s document for:
 - Exporter/Seller: %s (Tanjung Priok, Jakarta, Indonesia)
 - Buyer/Importer: %s (Destination: %s)
 - Product: %s
@@ -1308,18 +1308,22 @@ Generate a professional, fully-detailed export %s document for:
 
 Requirements:
 1. Format output as clean, valid Markdown. Do not include raw HTML.
-2. Use professional corporate language and legal-standard headings.
-3. Include an international transaction reference number (e.g. INV-2026-XXXX or RNA-EX-XXXX).
-4. Organize the details using clean markdown tables for items, quantities, and prices.
-5. Under separate sections, detail:
+2. The document MUST NOT look like an AI-generated text template. Do NOT include any conversational preamble, intro text, greeting, or postamble. The document must start directly with the markdown H1 title of the document.
+3. To make it look highly authentic and professional, use a clean structured text layout for the document header:
+   - The document H1 title should be standard: e.g. "# EXPORT QUOTATION" or "# COMMERCIAL INVOICE" or "# INTERNATIONAL SALES CONTRACT".
+   - Below the title, add a beautifully organized metadata block listing key transaction details: Exporter / Seller entity, Importer / Buyer entity, Document Reference Number, Issue Date, and Expiration / Validity Date.
+4. Use professional corporate language and legal-standard headings.
+5. Include an international transaction reference number (e.g. INV-2026-XXXX or RNA-EX-XXXX).
+6. Organize the details using clean markdown tables for items, quantities, and prices.
+7. Under separate sections, detail:
    - Port of Loading (Tanjung Priok, Jakarta, Indonesia)
    - Port of Discharge / Destination Port (based on country)
    - Standard Trade Terms (Incoterms: FOB or CIF as preferred by buyer notes)
    - Quality Specifications (moisture content, packaging)
    - Payment Terms (e.g. 30%% advance, 70%% against BL or Letter of Credit)
-6. Address any specific custom demands from the negotiation notes (e.g., specific moisture level, delivery request).
-7. If there are fields or information that you do not know or are not specified, leave them blank (e.g., [ _____________________ ]) so that the user can edit/fill them in later in Word.
-8. Conclude with signature sections and official agricultural liason declaration.`,
+8. Address any specific custom demands from the negotiation notes (e.g., specific moisture level, delivery request).
+9. Strictly DO NOT hallucinate, fabricate, or make up transaction details (such as bank account numbers, SWIFT codes, container numbers, seal numbers, exact freight costs, or shipping lines) unless they are explicitly provided. If any details are not specified, leave them blank (e.g., using "[ _____________________ ]") so that the user can fill them in.
+10. Conclude with signature sections and official agricultural liaison declaration.`,
 			docType, sellerName, body.BuyerName, country, body.Commodity, body.Quantity, price, or(notes, "None"))
 
 		reqBody := GeminiReq{
@@ -1356,8 +1360,9 @@ Requirements:
 						if err := json.NewDecoder(resp.Body).Decode(&geminiResp); err == nil {
 							if len(geminiResp.Candidates) > 0 && len(geminiResp.Candidates[0].Content.Parts) > 0 {
 								liveDoc := geminiResp.Candidates[0].Content.Parts[0].Text
+								cleanedDoc := cleanAIDocument(liveDoc)
 								s.writeJSON(w, http.StatusOK, map[string]any{
-									"document": liveDoc,
+									"document": cleanedDoc,
 									"note":     fmt.Sprintf("live-gemini-%s", modelName),
 								})
 								return
@@ -1375,22 +1380,84 @@ Requirements:
 	// Offline template fallback (without offline warning)
 	var doc string
 	docLower := strings.ToLower(docType)
-	sellerUpper := strings.ToUpper(sellerName)
 	if strings.Contains(docLower, "invoice") {
-		doc = fmt.Sprintf("# COMMERCIAL INVOICE\n**%s** | Tanjung Priok, Jakarta\n\n---\n\n**Invoice Number:** INV/2026/%d | **Date:** %s | **Ref:** %s\n\n**Seller:** %s, Jakarta, Indonesia\n**Buyer:** %s, %s\n\n| Commodity | Volume | Unit Price | Total |\n|---|---|---|---|\n| **%s** | %s | %s | [ _____________________ ] |\n\n### BANK DETAILS\n- Bank Name: [ _____________________ ]\n- Account No: [ _____________________ ]\n- Swift/BIC: [ _____________________ ]\n\n**Special Notes:** %s\n\n---\n*Authorized by Indonesian Agricultural Export Board Liaison*",
-			sellerUpper, rand.Intn(900000)+100000, dateStr, serialRef, sellerName, body.BuyerName, country, body.Commodity, body.Quantity, price, or(notes, "Standard export provisions applied."))
+		doc = fmt.Sprintf("# COMMERCIAL INVOICE\n\n**Document Reference Number:** %s\n**Issue Date:** %s\n**Exporter / Seller:** %s (Tanjung Priok, Jakarta, Indonesia)\n**Importer / Buyer:** %s (Destination: %s)\n\n| Commodity | Volume | Unit Price | Total |\n|---|---|---|---|\n| **%s** | %s | %s | [ _____________________ ] |\n\n### BANK DETAILS\n- Bank Name: [ _____________________ ]\n- Account No: [ _____________________ ]\n- Swift/BIC: [ _____________________ ]\n\n**Special Notes:** %s\n\n---\n*Authorized by Indonesian Agricultural Export Board Liaison*",
+			serialRef, dateStr, sellerName, body.BuyerName, country, body.Commodity, body.Quantity, price, or(notes, "Standard export provisions applied."))
 	} else if strings.Contains(docLower, "contract") {
-		doc = fmt.Sprintf("# INTERNATIONAL TRADE CONTRACT\n**ID: RNA-EX-%s-%d** | Date: **%s**\n\n**SELLER:** %s, Jakarta, Indonesia\n**BUYER:** %s, %s\n\n### ARTICLE 1: SUBJECT OF AGREEMENT\nSeller agrees to supply **%s** in accordance with the specifications below.\n\n### ARTICLE 2: QUANTITY & DELIVERY\n- Net Volume: **%s** (±3%% tolerance)\n- Port of Loading: Tanjung Priok, Jakarta, Indonesia\n- Port of Discharge: [ _____________________ ]\n- Incoterms: [ FOB / CIF ] — edit as applicable\n\n### ARTICLE 3: PRICE\n**%s FOB** Indonesian ports\n\n### ARTICLE 4: PAYMENT\n- Payment Method: [ Irrevocable LC / T/T ]\n- Advance: [ _____________________ ]%% \n- Balance: against B/L copy\n\n### ARTICLE 5: QUALITY\nSGS/Sucofindo certificate, moisture <12%%, phytosanitary certified.\n\n**Client Notes:** %s\n\n---\n*Signature Seller:* [ _____________________ ] *| Signature Buyer:* [ _____________________ ]*",
+		doc = fmt.Sprintf("# INTERNATIONAL SALES CONTRACT\n\n**Document Reference Number:** RNA-EX-%s-%d\n**Issue Date:** %s\n**Exporter / Seller:** %s (Tanjung Priok, Jakarta, Indonesia)\n**Importer / Buyer:** %s (Destination: %s)\n\n### ARTICLE 1: SUBJECT OF AGREEMENT\nSeller agrees to supply **%s** in accordance with the specifications below.\n\n### ARTICLE 2: QUANTITY & DELIVERY\n- Net Volume: **%s** (±3%% tolerance)\n- Port of Loading: Tanjung Priok, Jakarta, Indonesia\n- Port of Discharge: [ _____________________ ]\n- Incoterms: [ FOB / CIF ] — edit as applicable\n\n### ARTICLE 3: PRICE\n**%s FOB** Indonesian ports\n\n### ARTICLE 4: PAYMENT\n- Payment Method: [ Irrevocable LC / T/T ]\n- Advance: [ _____________________ ]%% \n- Balance: against B/L copy\n\n### ARTICLE 5: QUALITY\nSGS/Sucofindo certificate, moisture <12%%, phytosanitary certified.\n\n**Client Notes:** %s\n\n---\n*Signature Seller:* [ _____________________ ] *| Signature Buyer:* [ _____________________ ]*",
 			strings.ToUpper(country[:3]), rand.Intn(90000)+10000, dateStr, sellerName, body.BuyerName, country, body.Commodity, body.Quantity, price, or(notes, "Standard provisions apply."))
 	} else {
-		doc = fmt.Sprintf("# FORMAL EXPORT QUOTATION\n**%s** | Date: %s | Ref: %s\n\n**To:** %s | **Destination:** %s\n\n| Commodity | Volume | Price (FOB) | Origin | Loading Port |\n|---|---|---|---|---|\n| **%s** | %s | %s | Indonesia | Tanjung Priok |\n\n### TRADE TERMS\n1. **Origin:** Indonesia\n2. **Packing:** [ _____________________ ]\n3. **Payment:** [ 30%% T/T advance + 70%% against B/L / LC ]\n4. **Lead Time:** [ _____________________ ] days post-phytosanitary approval\n5. **Quality:** Moisture <12%%, SGS/Sucofindo certified\n\n### SPECIAL DEMANDS ADDRESSED\n%s\n\n---\n*Quotation valid for:* [ _____________________ ] days",
-			sellerUpper, dateStr, serialRef, body.BuyerName, country, body.Commodity, body.Quantity, price, or(notes, "No custom demands specified."))
+		doc = fmt.Sprintf("# EXPORT QUOTATION\n\n**Document Reference Number:** %s\n**Issue Date:** %s\n**Exporter / Seller:** %s (Tanjung Priok, Jakarta, Indonesia)\n**Importer / Buyer:** %s (Destination: %s)\n\n| Commodity | Volume | Price (FOB) | Origin | Loading Port |\n|---|---|---|---|---|\n| **%s** | %s | %s | Indonesia | Tanjung Priok |\n\n### TRADE TERMS\n1. **Origin:** Indonesia\n2. **Packing:** [ _____________________ ]\n3. **Payment:** [ 30%% T/T advance + 70%% against B/L / LC ]\n4. **Lead Time:** [ _____________________ ] days post-phytosanitary approval\n5. **Quality:** Moisture <12%%, SGS/Sucofindo certified\n\n### SPECIAL DEMANDS ADDRESSED\n%s\n\n---\n*Quotation valid for:* [ _____________________ ] days",
+			serialRef, dateStr, sellerName, body.BuyerName, country, body.Commodity, body.Quantity, price, or(notes, "No custom demands specified."))
 	}
 
 	s.writeJSON(w, http.StatusOK, map[string]any{
 		"document": doc,
 		"note":     "offline-template",
 	})
+}
+
+func cleanAIDocument(text string) string {
+	cleaned := strings.TrimSpace(text)
+
+	// 1. Remove markdown wrappers
+	if strings.HasPrefix(cleaned, "```markdown") {
+		cleaned = strings.TrimSpace(strings.TrimPrefix(cleaned, "```markdown"))
+	} else if strings.HasPrefix(cleaned, "```") {
+		cleaned = strings.TrimSpace(strings.TrimPrefix(cleaned, "```"))
+	}
+	if strings.HasSuffix(cleaned, "```") {
+		cleaned = strings.TrimSpace(strings.TrimSuffix(cleaned, "```"))
+	}
+
+	// 2. Clean preamble before H1/H2 header
+	h1Index := strings.Index(cleaned, "#")
+	if h1Index != -1 && h1Index > 0 {
+		preamble := strings.TrimSpace(cleaned[:h1Index])
+		preambleLower := strings.ToLower(preamble)
+		conversationalKeywords := []string{"exopilot", "expert", "generate", "here is", "sure", "as a", "i have", "dear", "hello", "professional", "specification"}
+		isConversational := len(preamble) < 400
+		if !isConversational {
+			for _, kw := range conversationalKeywords {
+				if strings.Contains(preambleLower, kw) {
+					isConversational = true
+					break
+				}
+			}
+		}
+		if isConversational {
+			cleaned = strings.TrimSpace(cleaned[h1Index:])
+		}
+	}
+
+	// 3. Clean postamble
+	lines := strings.Split(cleaned, "\n")
+	lastValuableLineIndex := len(lines) - 1
+	for lastValuableLineIndex >= 0 {
+		lineTrim := strings.TrimSpace(lines[lastValuableLineIndex])
+		if lineTrim == "" {
+			lastValuableLineIndex--
+			continue
+		}
+		lineLower := strings.ToLower(lineTrim)
+		if strings.HasPrefix(lineLower, "if you need") ||
+			strings.HasPrefix(lineLower, "hope this helps") ||
+			strings.HasPrefix(lineLower, "let me know if") ||
+			strings.Contains(lineLower, "exopilot ai") ||
+			strings.HasPrefix(lineLower, "best regards") ||
+			strings.HasPrefix(lineLower, "here is the") ||
+			(len(lineLower) < 100 && (strings.Contains(lineLower, "thank you") || strings.Contains(lineLower, "regards"))) {
+			lastValuableLineIndex--
+		} else {
+			break
+		}
+	}
+
+	if lastValuableLineIndex < len(lines)-1 {
+		cleaned = strings.TrimSpace(strings.Join(lines[:lastValuableLineIndex+1], "\n"))
+	}
+
+	return cleaned
 }
 
 func (s *ExopilotServer) handleBuyerCRM(w http.ResponseWriter, r *http.Request) {
@@ -1517,6 +1584,21 @@ func main() {
 	mux.HandleFunc("/api/negotiation-note/", server.handleNoteByID)
 	mux.HandleFunc("/api/buyer-crm/", server.handleBuyerCRM)
 	mux.HandleFunc("/api/generate-document", server.handleGenerateDocument)
+
+	// Root route handler to avoid raw "404 page not found"
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":       "ok",
+			"service":      "exopilot-api",
+			"message":      "Exopilot Go API is active. Please visit the frontend application.",
+			"frontend_url": "http://localhost:3000",
+		})
+	})
 
 	// Health check
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

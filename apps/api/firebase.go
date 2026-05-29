@@ -32,9 +32,22 @@ func InitFirebase() error {
 		credentialsPath = "./firebase-service-account.json"
 	}
 
+	// Try parent directories if file doesn't exist in current working directory
+	if _, err := os.Stat(credentialsPath); os.IsNotExist(err) {
+		if _, errParent := os.Stat("../" + credentialsPath); errParent == nil {
+			credentialsPath = "../" + credentialsPath
+		} else if _, errParent2 := os.Stat("../../" + credentialsPath); errParent2 == nil {
+			credentialsPath = "../../" + credentialsPath
+		}
+	}
+
+	config := &firebase.Config{
+		ProjectID: os.Getenv("FIREBASE_PROJECT_ID"),
+	}
+
 	// Initialize Firebase App with service account credentials
 	opt := option.WithCredentialsFile(credentialsPath)
-	app, err := firebase.NewApp(ctx, nil, opt)
+	app, err := firebase.NewApp(ctx, config, opt)
 	if err != nil {
 		return fmt.Errorf("error initializing Firebase app: %v", err)
 	}

@@ -15,7 +15,7 @@ if (fs.existsSync(envPath)) {
     if (trimmed && !trimmed.startsWith("#") && trimmed.includes("=")) {
       const eqIdx = trimmed.indexOf("=");
       const key = trimmed.slice(0, eqIdx).trim();
-      const val = trimmed.slice(eqIdx + 1).trim().replace(/^['"]|['"]$/g, "");
+      const val = trimmed.slice(eqIdx + 1).trim().replace(/^['"]+|['"]+$/g, "").trim();
       envConfig[key] = val;
     }
   });

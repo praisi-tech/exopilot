@@ -8,6 +8,160 @@ import { jsPDF } from "jspdf";
 import { HighFidelityPaperPreview } from "./HighFidelityPaperPreview";
 import { useLanguage } from "@/lib/LanguageContext";
 
+export function cleanAIDocument(text: string): string {
+  let cleaned = text.trim();
+  
+  // 1. Remove markdown code block wrappers if the model wrapped the entire response
+  if (cleaned.startsWith("```markdown")) {
+    cleaned = cleaned.substring(11).trim();
+  } else if (cleaned.startsWith("```")) {
+    cleaned = cleaned.substring(3).trim();
+  }
+  if (cleaned.endsWith("```")) {
+    cleaned = cleaned.substring(0, cleaned.length - 3).trim();
+  }
+  
+  // 2. Search for the first header (H1, H2 or H3) starting with "#"
+  const h1Index = cleaned.indexOf("#");
+  if (h1Index !== -1 && h1Index > 0) {
+    const preamble = cleaned.substring(0, h1Index).trim();
+    const preambleLower = preamble.toLowerCase();
+    const conversationalKeywords = ["exopilot", "expert", "generate", "here is", "sure", "as a", "i have", "dear", "hello", "professional", "specification"];
+    const isConversational = conversationalKeywords.some(keyword => preambleLower.includes(keyword)) || preamble.length < 400;
+    
+    if (isConversational) {
+      cleaned = cleaned.substring(h1Index).trim();
+    }
+  }
+  
+  // 3. Remove conversational postamble if any
+  const lines = cleaned.split("\n");
+  let lastValuableLineIndex = lines.length - 1;
+  while (lastValuableLineIndex >= 0) {
+    const lineTrim = lines[lastValuableLineIndex].trim();
+    if (lineTrim === "") {
+      lastValuableLineIndex--;
+      continue;
+    }
+    const lineLower = lineTrim.toLowerCase();
+    if (lineLower.startsWith("if you need") || 
+        lineLower.startsWith("hope this helps") || 
+        lineLower.startsWith("let me know if") || 
+        lineLower.includes("exopilot ai") || 
+        lineLower.startsWith("best regards") ||
+        lineLower.startsWith("here is the") ||
+        (lineLower.length < 100 && (lineLower.includes("thank you") || lineLower.includes("regards")))) {
+      lastValuableLineIndex--;
+    } else {
+      break;
+    }
+  }
+  
+  if (lastValuableLineIndex < lines.length - 1) {
+    cleaned = lines.slice(0, lastValuableLineIndex + 1).join("\n").trim();
+  }
+  
+  return cleaned;
+}
+
+export function todayStr(): string {
+  return new Date().toISOString().split("T")[0];
+}
+
+export interface ParsedDoc {
+  title: string;
+  exporter: string;
+  importer: string;
+  refNumber: string;
+  issueDate: string;
+  expiryDate: string;
+  otherMetadata: Array<{ key: string; value: string }>;
+  bodyText: string;
+}
+
+export function parseDocumentMetadata(text: string): ParsedDoc {
+  const lines = text.split("\n");
+  let title = "";
+  let exporter = "";
+  let importer = "";
+  let refNumber = "";
+  let issueDate = "";
+  let expiryDate = "";
+  const otherMetadata: Array<{ key: string; value: string }> = [];
+  
+  let bodyStartIndex = 0;
+  let parsedMetadataCount = 0;
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line === "") {
+      continue;
+    }
+    
+    // If we see H1, record title
+    if (line.startsWith("# ")) {
+      title = line.substring(2).replace(/\*\*/g, "").trim();
+      continue;
+    }
+    
+    // Check if it is a metadata line: starts with bold text "**Key:** Value" or "**Key**: Value" or "Key: Value"
+    const metadataMatch = line.match(/^\*\*(.*?)\*\*:\s*(.*)$/) || line.match(/^(.*?):\s*(.*)$/);
+    if (metadataMatch) {
+      const rawKey = metadataMatch[1].replace(/\*\*/g, "").trim();
+      const value = metadataMatch[2].replace(/\*\*/g, "").trim();
+      const keyLower = rawKey.toLowerCase();
+      
+      if (line.startsWith("- ") || line.startsWith("* ") || line.startsWith("|") || line.startsWith(">")) {
+        bodyStartIndex = i;
+        break;
+      }
+      
+      if (keyLower.includes("exporter") || keyLower.includes("seller")) {
+        exporter = value;
+      } else if (keyLower.includes("importer") || keyLower.includes("buyer")) {
+        importer = value;
+      } else if (keyLower.includes("ref") || keyLower.includes("reference") || keyLower.includes("invoice number") || keyLower.includes("contract number") || keyLower.includes("invoice no")) {
+        refNumber = value;
+      } else if (keyLower.includes("issue date") || (keyLower.includes("date") && !keyLower.includes("expiry") && !keyLower.includes("expiration") && !keyLower.includes("validity"))) {
+        issueDate = value;
+      } else if (keyLower.includes("expiry") || keyLower.includes("expiration") || keyLower.includes("valid") || keyLower.includes("validity")) {
+        expiryDate = value;
+      } else if (rawKey.length < 30 && value.length < 150) {
+        otherMetadata.push({ key: rawKey, value });
+      } else {
+        bodyStartIndex = i;
+        break;
+      }
+      parsedMetadataCount++;
+      continue;
+    }
+    
+    // If we reach a section header, horizontal rule, list, or table, we stop parsing metadata
+    if (line.startsWith("##") || line.startsWith("---") || line.startsWith("|") || line.startsWith("-") || line.startsWith("*")) {
+      bodyStartIndex = i;
+      break;
+    }
+    
+    if (parsedMetadataCount > 0) {
+      bodyStartIndex = i;
+      break;
+    }
+  }
+  
+  const bodyText = lines.slice(bodyStartIndex).join("\n").trim();
+  
+  return {
+    title,
+    exporter,
+    importer,
+    refNumber,
+    issueDate,
+    expiryDate,
+    otherMetadata,
+    bodyText
+  };
+}
+
 interface AIDocStudioProps {
   inquiries: any[];
   currentUser?: { name: string; email: string; businessName: string } | null;
@@ -63,7 +217,7 @@ export function AIDocStudio({ inquiries, currentUser, onAlert }: AIDocStudioProp
       try {
         const genAI = new GoogleGenerativeAI(geminiKey);
         const systemPrompt = `You are Exopilot AI, a world-class international trade documentation expert.
-Generate a professional, fully-detailed export ${docType} document for:
+Generate a professional, fully-detailed, realistic export ${docType} document for:
 - Exporter/Seller: ${myBusinessName} (Tanjung Priok, Jakarta, Indonesia)
 - Buyer/Importer: ${formData.buyerName} (Destination: ${formData.destinationCountry})
 - Product: ${formData.commodity}
@@ -73,18 +227,22 @@ Generate a professional, fully-detailed export ${docType} document for:
 
 Requirements:
 1. Format output as clean, valid Markdown. Do not include raw HTML.
-2. Use professional corporate language and legal-standard headings.
-3. Include an international transaction reference number (e.g. INV-2026-XXXX or RNA-EX-XXXX).
-4. Organize the details using clean markdown tables for items, quantities, and prices.
-5. Under separate sections, detail:
+2. The document MUST NOT look like an AI-generated text template. Do NOT include any conversational preamble, intro text, greeting, or postamble. The document must start directly with the markdown H1 title of the document.
+3. To make it look highly authentic and professional, use a clean structured text layout for the document header:
+   - The document H1 title should be standard: e.g. "# EXPORT QUOTATION" or "# COMMERCIAL INVOICE" or "# INTERNATIONAL SALES CONTRACT".
+   - Below the title, add a beautifully organized metadata block listing key transaction details: Exporter / Seller entity, Importer / Buyer entity, Document Reference Number, Issue Date, and Expiration / Validity Date.
+4. Use professional corporate language and legal-standard headings.
+5. Include an international transaction reference number (e.g. INV-2026-XXXX or RNA-EX-XXXX).
+6. Organize the details using clean markdown tables for items, quantities, and prices.
+7. Under separate sections, detail:
    - Port of Loading (Tanjung Priok, Jakarta, Indonesia)
    - Port of Discharge / Destination Port (based on country)
    - Standard Trade Terms (Incoterms: FOB or CIF as preferred by buyer notes)
    - Quality Specifications (moisture content, packaging)
    - Payment Terms (e.g. 30% advance, 70% against BL or Letter of Credit)
-6. Address any specific custom demands from the negotiation notes (e.g., specific moisture level, delivery request).
-7. If there are fields or information that you do not know or are not specified, leave them blank (e.g., [ _____________________ ]) so that the user can edit/fill them in later in Word.
-8. Conclude with signature sections and official agricultural liason declaration.`;
+8. Address any specific custom demands from the negotiation notes (e.g., specific moisture level, delivery request).
+9. Strictly DO NOT hallucinate, fabricate, or make up transaction details (such as bank account numbers, SWIFT codes, container numbers, seal numbers, exact freight costs, or shipping lines) unless they are explicitly provided. If any details are not specified, leave them blank (e.g., using "[ _____________________ ]") so that the user can fill them in.
+10. Conclude with signature sections and official agricultural liaison declaration.`;
 
         const candidateModels = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.5-flash"];
         let result = null;
@@ -109,7 +267,8 @@ Requirements:
         }
 
         const text = result.response.text();
-        setGeneratedDoc(text);
+        const cleanedText = cleanAIDocument(text);
+        setGeneratedDoc(cleanedText);
         
         onAlert(
           language === "en" ? "Export document compiled dynamically via Gemini AI!" :
@@ -133,7 +292,8 @@ Requirements:
         businessName: myBusinessName,
         ...formData,
       });
-      setGeneratedDoc(res.document);
+      const cleaned = cleanAIDocument(res.document);
+      setGeneratedDoc(cleaned);
       onAlert(
         language === "en" ? "Export document draft compiled successfully!" :
         language === "hi" ? "निर्यात दस्तावेज़ का मसौदा सफलतापूर्वक संकलित किया गया!" :
@@ -160,70 +320,259 @@ Requirements:
     if (!generatedDoc) return;
     try {
       const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const parsed = parseDocumentMetadata(generatedDoc);
       const pageW = doc.internal.pageSize.getWidth();
       const pageH = doc.internal.pageSize.getHeight();
       const margin = 15;
       const contentW = pageW - margin * 2;
       let y = margin;
 
+      const companyNameUpper = (currentUser?.businessName || "PT REMPAH NUSANTARA ABADI").toUpperCase();
+
       const checkPage = (need: number) => {
-        if (y + need > pageH - 20) { doc.addPage(); y = margin; }
+        if (y + need > pageH - 20) {
+          doc.addPage();
+          // Running Header on new pages
+          doc.setFillColor(79, 70, 229); // indigo-600 top strip
+          doc.rect(0, 0, pageW, 2.5, "F");
+          
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(6.5);
+          doc.setTextColor(148, 163, 184); // slate-400
+          doc.text(`${companyNameUpper}  |  ${docType.toUpperCase()}`, margin, 8);
+          doc.text("EXOPILOT SECURE REGISTRY", pageW - margin, 8, { align: "right" });
+          
+          doc.setDrawColor(241, 245, 249);
+          doc.setLineWidth(0.15);
+          doc.line(margin, 10, pageW - margin, 10);
+          y = 15;
+        }
       };
 
-      // ── Letterhead banner ──
-      const companyNameUpper = (currentUser?.businessName || "PT REMPAH NUSANTARA ABADI").toUpperCase();
-      doc.setFillColor(15, 23, 42); // slate-900
-      doc.rect(0, 0, pageW, 22, "F");
-      doc.setTextColor(241, 245, 249); // slate-100
+      // ── Sleek Premium Letterhead Header ──
+      // Top indigo accent strip
+      doc.setFillColor(79, 70, 229); // indigo-600
+      doc.rect(0, 0, pageW, 3, "F");
+      
+      // Company name (dark corporate slate)
+      doc.setTextColor(15, 23, 42); // slate-900
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
-      doc.text(companyNameUpper, margin, 10);
-      doc.setFontSize(6);
-      doc.setTextColor(148, 163, 184); // slate-400
-      doc.text("Exporter Co-Op Group  |  Tanjung Priok, Jakarta, Indonesia", margin, 15);
-      doc.setTextColor(129, 140, 248); // indigo-400
-      doc.setFontSize(7);
-      doc.text(docType.toUpperCase(), pageW - margin, 12, { align: "right" });
+      doc.text(companyNameUpper, margin, 12);
+      
+      // Exporter/Subtitle details
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(6.5);
       doc.setTextColor(100, 116, 139); // slate-500
+      doc.text("Exporter Co-Op Group  |  Tanjung Priok, Jakarta, Indonesia  |  info@exopilot.co", margin, 16.5);
+      
+      // Badge-style Document Type Tag
+      doc.setFillColor(243, 244, 246); // gray-100
+      doc.rect(pageW - margin - 40, 8, 40, 5, "F");
+      doc.setDrawColor(209, 213, 219); // gray-300
+      doc.setLineWidth(0.15);
+      doc.rect(pageW - margin - 40, 8, 40, 5);
+      
+      doc.setTextColor(79, 70, 229); // indigo-600
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(6.5);
+      doc.text(docType.toUpperCase(), pageW - margin - 20, 11.5, { align: "center" });
+      
+      // Document Registry metadata
+      doc.setFont("helvetica", "normal");
       doc.setFontSize(5.5);
-      doc.text("Document Registry", pageW - margin, 16, { align: "right" });
+      doc.setTextColor(148, 163, 184); // slate-400
+      doc.text("EXOPILOT SECURE REGISTRY", pageW - margin, 16.5, { align: "right" });
 
-      y = 30;
+      // Clean divider line
+      doc.setDrawColor(226, 232, 240); // slate-200
+      doc.setLineWidth(0.3);
+      doc.line(margin, 21, pageW - margin, 21);
+
+      y = 28;
+
+      // ── Side-by-Side Corporate Metadata Panel ──
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(6.5);
+      doc.setTextColor(148, 163, 184); // slate-400
+      doc.text("EXPORTER / SELLER", margin, y);
+      
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(15, 23, 42); // slate-900
+      const expText = parsed.exporter || companyNameUpper;
+      const expLines = doc.splitTextToSize(expText, contentW * 0.5 - 5);
+      doc.text(expLines, margin, y + 4.5);
+      
+      const buyerY = y + 4.5 + expLines.length * 3.5 + 4;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(6.5);
+      doc.setTextColor(148, 163, 184); // slate-400
+      doc.text("IMPORTER / BUYER", margin, buyerY);
+      
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(15, 23, 42); // slate-900
+      const impText = parsed.importer || formData.buyerName || "—";
+      const impLines = doc.splitTextToSize(impText, contentW * 0.5 - 5);
+      doc.text(impLines, margin, buyerY + 4.5);
+
+      // Metadata Panel (Right side)
+      const boxX = margin + contentW * 0.5 + 3;
+      const boxW = contentW * 0.5 - 3;
+      const boxH = 26;
+      doc.setFillColor(248, 250, 252); // slate-50
+      doc.rect(boxX, y - 2, boxW, boxH, "F");
+      doc.setDrawColor(226, 232, 240); // slate-200
+      doc.setLineWidth(0.2);
+      doc.rect(boxX, y - 2, boxW, boxH);
+      
+      let boxY = y + 2.5;
+      // Ref No
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(6);
+      doc.setTextColor(148, 163, 184);
+      doc.text("REFERENCE NO.", boxX + 4, boxY);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text(parsed.refNumber || "—", boxX + 4, boxY + 4.5);
+      
+      // Issue Date
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(6);
+      doc.setTextColor(148, 163, 184);
+      doc.text("ISSUE DATE", boxX + boxW * 0.5 + 2, boxY);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text(parsed.issueDate || todayStr(), boxX + boxW * 0.5 + 2, boxY + 4.5);
+      
+      // Expiry Date
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(6);
+      doc.setTextColor(148, 163, 184);
+      doc.text("VALIDITY / EXPIRY", boxX + 4, boxY + 11.5);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text(parsed.expiryDate || "—", boxX + 4, boxY + 16);
+      
+      // Other Metadata if any
+      if (parsed.otherMetadata.length > 0) {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(6);
+        doc.setTextColor(148, 163, 184);
+        doc.text(parsed.otherMetadata[0].key.toUpperCase(), boxX + boxW * 0.5 + 2, boxY + 11.5);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7.5);
+        doc.setTextColor(15, 23, 42);
+        doc.text(parsed.otherMetadata[0].value, boxX + boxW * 0.5 + 2, boxY + 16);
+      }
+
+      y = Math.max(buyerY + 4.5 + impLines.length * 3.5 + 5, y - 2 + boxH + 5);
+      
+      // Clean divider line below the panel
+      doc.setDrawColor(241, 245, 249);
+      doc.setLineWidth(0.2);
+      doc.line(margin, y, pageW - margin, y);
+      y += 6;
 
       // ── Parse markdown content ──
-      const rawLines = generatedDoc.split("\n");
+      const rawLines = parsed.bodyText.split("\n");
       let inTable = false;
       const tableRows: string[][] = [];
 
       const drawTable = (rows: string[][]) => {
         if (rows.length === 0) return;
+        
+        // Calculate dynamic column widths based on content size
         const colCount = rows[0].length;
-        const colW = contentW / colCount;
-        const rowH = 7;
-        // Header
-        doc.setFillColor(241, 245, 249); // slate-50
-        doc.rect(margin, y, contentW, rowH, "F");
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(7);
-        doc.setTextColor(51, 65, 85); // slate-700
-        rows[0].forEach((cell, ci) => {
-          doc.text(cell.trim(), margin + ci * colW + 2, y + 5);
-        });
-        y += rowH;
-        // Body rows
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(7.5);
-        doc.setTextColor(71, 85, 105); // slate-600
-        for (let ri = 1; ri < rows.length; ri++) {
-          checkPage(rowH);
-          if (ri % 2 === 0) {
-            doc.setFillColor(248, 250, 252);
-            doc.rect(margin, y, contentW, rowH, "F");
+        const colWidths: number[] = new Array(colCount).fill(0);
+        
+        // Measure character length in each cell to calculate relative weights
+        const colWeights = new Array(colCount).fill(0);
+        for (let ri = 0; ri < rows.length; ri++) {
+          for (let ci = 0; ci < colCount; ci++) {
+            const cellText = (rows[ri][ci] || "").trim();
+            colWeights[ci] = Math.max(colWeights[ci], cellText.length);
           }
-          rows[ri].forEach((cell, ci) => {
-            doc.text(cell.trim(), margin + ci * colW + 2, y + 5);
+        }
+        
+        // Enforce minimum weight to prevent squished columns
+        for (let ci = 0; ci < colCount; ci++) {
+          colWeights[ci] = Math.max(colWeights[ci], 6);
+        }
+        
+        const totalWeight = colWeights.reduce((a, b) => a + b, 0);
+        
+        // Allocate proportional column widths
+        for (let ci = 0; ci < colCount; ci++) {
+          colWidths[ci] = (colWeights[ci] / totalWeight) * contentW;
+          if (colWidths[ci] < 18) colWidths[ci] = 18; // minimum width in mm
+        }
+        
+        // Re-normalize to equal exactly contentW
+        const currentSum = colWidths.reduce((a, b) => a + b, 0);
+        for (let ci = 0; ci < colCount; ci++) {
+          colWidths[ci] = (colWidths[ci] / currentSum) * contentW;
+        }
+
+        const padding = 2.5; // mm horizontal cell padding
+        const cellTextPaddingY = 4.2; // vertical padding for baseline text placement
+        const minRowHeight = 8;
+        
+        // Row drawing helper
+        const drawRow = (rowCells: string[], isHeaderRow: boolean, bgFillColor?: [number, number, number]) => {
+          // Perform wrap logic using splitTextToSize
+          const wrappedCells = rowCells.map((cellText, ci) => {
+            const cleanText = (cellText || "").trim();
+            const cellW = colWidths[ci] - padding * 2;
+            return doc.splitTextToSize(cleanText, cellW > 4 ? cellW : 14);
           });
-          y += rowH;
+          
+          // Row height proportional to the maximum wrapped lines
+          const maxLines = Math.max(...wrappedCells.map(lines => lines.length), 1);
+          const rowHeight = Math.max(minRowHeight, maxLines * 3.5 + 3.8);
+          
+          checkPage(rowHeight);
+          
+          // Fill background if specified
+          if (bgFillColor) {
+            doc.setFillColor(bgFillColor[0], bgFillColor[1], bgFillColor[2]);
+            doc.rect(margin, y, contentW, rowHeight, "F");
+          }
+          
+          let xOff = margin;
+          doc.setDrawColor(226, 232, 240); // slate-200
+          doc.setLineWidth(0.15);
+          
+          for (let ci = 0; ci < colCount; ci++) {
+            // Cell outline rectangle
+            doc.rect(xOff, y, colWidths[ci], rowHeight);
+            
+            doc.setFont("helvetica", isHeaderRow ? "bold" : "normal");
+            doc.setFontSize(isHeaderRow ? 7 : 7.5);
+            doc.setTextColor(isHeaderRow ? 15 : 51, isHeaderRow ? 23 : 65, isHeaderRow ? 42 : 85);
+            
+            const lines = wrappedCells[ci];
+            lines.forEach((line: string, lineIdx: number) => {
+              doc.text(line, xOff + padding, y + cellTextPaddingY + (lineIdx * 3.5));
+            });
+            
+            xOff += colWidths[ci];
+          }
+          
+          y += rowHeight;
+        };
+        
+        // Draw Header
+        drawRow(rows[0], true, [241, 245, 249]);
+        
+        // Draw Data
+        for (let ri = 1; ri < rows.length; ri++) {
+          const bg: [number, number, number] | undefined = (ri % 2 === 0) ? [248, 250, 252] : undefined;
+          drawRow(rows[ri], false, bg);
         }
         y += 4;
       };
@@ -426,7 +775,7 @@ Requirements:
       doc.setFont("helvetica", "italic");
       doc.setFontSize(9);
       doc.setTextColor(79, 70, 229);
-      doc.text("Praisilia Anastasya", pageW - margin, y + 4, { align: "right" });
+      doc.text(currentUser?.name || "Authorized Representative", pageW - margin, y + 4, { align: "right" });
       y += 5;
       doc.setDrawColor(203, 213, 225);
       doc.line(pageW - margin - 35, y, pageW - margin, y);
@@ -462,18 +811,19 @@ Requirements:
     if (!generatedDoc) return;
     try {
       const companyName = currentUser?.businessName || "PT Rempah Nusantara Abadi";
-      const rawLines = generatedDoc.split("\n");
+      const parsed = parseDocumentMetadata(generatedDoc);
+      const rawLines = parsed.bodyText.split("\n");
       let htmlBody = "";
       let inTable = false;
       let tableRows: string[][] = [];
 
       const drawTableHtml = (rows: string[][]) => {
         if (rows.length === 0) return "";
-        let tHtml = '<table style="width:100%; border-collapse:collapse; margin:15px 0; font-family:\'Segoe UI\', Arial, sans-serif;">';
-        // Header row
-        tHtml += '<tr style="background-color:#f1f5f9; font-weight:bold;">';
+        let tHtml = '<table style="width:100%; border-collapse:collapse; margin:20px 0; font-family:\'Segoe UI\', Arial, sans-serif; table-layout: auto; word-wrap: break-word;">';
+        // Header row - professional dark slate background
+        tHtml += '<tr style="background-color:#0f172a; font-weight:bold; color:#ffffff;">';
         rows[0].forEach(cell => {
-          tHtml += `<th style="border:1px solid #cbd5e1; padding:8px 10px; text-align:left; font-size:10pt; color:#1e293b;">${cell.trim()}</th>`;
+          tHtml += `<th style="border:1px solid #cbd5e1; padding:10px 12px; text-align:left; font-size:10pt; color:#ffffff; font-weight:bold;">${cell.trim()}</th>`;
         });
         tHtml += '</tr>';
         // Data rows
@@ -481,7 +831,8 @@ Requirements:
           const bg = ri % 2 === 0 ? "#f8fafc" : "#ffffff";
           tHtml += `<tr style="background-color:${bg};">`;
           rows[ri].forEach(cell => {
-            tHtml += `<td style="border:1px solid #cbd5e1; padding:8px 10px; text-align:left; font-size:10pt; color:#334155;">${cell.trim()}</td>`;
+            const val = cell ? cell.trim() : "";
+            tHtml += `<td style="border:1px solid #cbd5e1; padding:10px 12px; text-align:left; font-size:10pt; color:#334155;">${val}</td>`;
           });
           tHtml += '</tr>';
         }
@@ -516,14 +867,14 @@ Requirements:
 
         if (trimmed.startsWith("# ")) {
           const text = trimmed.substring(2).replace(/\*\*/g, "").toUpperCase();
-          htmlBody += `<h1 style="font-size:16pt; color:#0f172a; border-bottom:2px solid #6366f1; padding-bottom:5px; margin-top:20px; margin-bottom:10px; text-transform:uppercase;">${text}</h1>`;
+          htmlBody += `<h1 style="font-size:15pt; color:#0f172a; border-bottom:2px solid #6366f1; padding-bottom:5px; margin-top:20px; margin-bottom:10px; text-transform:uppercase;">${text}</h1>`;
           continue;
         }
 
         if (trimmed.startsWith("## ") || trimmed.startsWith("### ")) {
           const offset = trimmed.startsWith("## ") ? 3 : 4;
           const text = trimmed.substring(offset).replace(/\*\*/g, "").toUpperCase();
-          htmlBody += `<h2 style="font-size:13pt; color:#1e293b; margin-top:15px; margin-bottom:8px; text-transform:uppercase;">${text}</h2>`;
+          htmlBody += `<h2 style="font-size:12pt; color:#1e293b; margin-top:15px; margin-bottom:8px; text-transform:uppercase;">${text}</h2>`;
           continue;
         }
 
@@ -571,7 +922,7 @@ Requirements:
         <style>
           @page {
             size: 21cm 29.7cm;
-            margin: 2cm 2cm 2cm 2cm;
+            margin: 2.5cm 2.5cm 2.5cm 2.5cm;
           }
           body {
             font-family: 'Segoe UI', Arial, sans-serif;
@@ -582,22 +933,67 @@ Requirements:
         </style>
       </head>
       <body>
-        <!-- Letterhead Banner -->
-        <div style="background-color:#0f172a; color:#ffffff; padding:15px; margin-bottom:25px; font-family:'Segoe UI', Arial, sans-serif;">
-          <table style="width:100%; border:none; margin:0;">
+        <!-- Sleek Premium Letterhead Header -->
+        <div style="border-top: 4px solid #4f46e5; padding-top: 15px; margin-bottom: 25px; font-family:'Segoe UI', Arial, sans-serif;">
+          <table style="width:100%; border:none; margin:0; border-collapse:collapse;">
             <tr style="border:none; background:none;">
               <td style="border:none; padding:0; text-align:left; background:none;">
-                <span style="background-color:#4f60e6; color:#ffffff; font-size:8pt; font-weight:bold; padding:2px 5px; text-transform:uppercase;">CO-OPS ARCHIVE</span>
-                <h2 style="color:#ffffff; margin:5px 0 0 0; font-size:14pt; font-weight:bold; text-transform:uppercase; letter-spacing:1px;">${companyName}</h2>
-                <p style="color:#94a3b8; margin:2px 0 0 0; font-size:8.5pt;">Exporter Co-Op Group | Tanjung Priok, Jakarta, Indonesia</p>
+                <h2 style="color:#0f172a; margin:0; font-size:15pt; font-weight:bold; text-transform:uppercase; letter-spacing:0.5px;">${companyName}</h2>
+                <p style="color:#64748b; margin:4px 0 0 0; font-size:8.5pt;">Exporter Co-Op Group | Tanjung Priok, Jakarta, Indonesia | info@exopilot.co</p>
               </td>
               <td style="border:none; padding:0; text-align:right; vertical-align:middle; background:none;">
-                <span style="color:#94a3b8; font-size:8pt; text-transform:uppercase; display:block;">Document Registry</span>
-                <span style="color:#818cf8; font-size:10pt; font-weight:bold; text-transform:uppercase;">${docType.toUpperCase()}</span>
+                <div style="background-color:#f3f4f6; border:1px solid #d1d5db; padding:4px 10px; display:inline-block; font-weight:bold; color:#4f46e5; font-size:9.5pt; text-transform:uppercase; letter-spacing:0.5px;">
+                  ${docType.toUpperCase()}
+                </div>
+                <p style="color:#94a3b8; margin:4px 0 0 0; font-size:7.5pt; text-transform:uppercase; letter-spacing:0.5px;">EXOPILOT SECURE REGISTRY</p>
               </td>
             </tr>
           </table>
+          <hr style="border:none; border-top:1px solid #e2e8f0; margin-top:12px; margin-bottom:0;" />
         </div>
+
+        <!-- Document Title & Reference Panel -->
+        <h1 style="font-size:14pt; color:#0f172a; border-bottom:2px solid #6366f1; padding-bottom:5px; margin-top:0px; margin-bottom:15px; text-transform:uppercase;">
+          ${parsed.title || docType.toUpperCase()}
+        </h1>
+
+        <table style="width:100%; border:none; margin-bottom:25px; border-collapse:collapse; font-family:'Segoe UI', Arial, sans-serif;">
+          <tr style="border:none; background:none;">
+            <!-- Left Side: Addresses -->
+            <td style="border:none; width:55%; padding:0; vertical-align:top; background:none; text-align:left;">
+              <div style="margin-bottom:12px;">
+                <span style="color:#94a3b8; font-weight:bold; text-transform:uppercase; font-size:8pt; display:block; letter-spacing:0.5px;">Exporter / Seller</span>
+                <span style="color:#0f172a; font-weight:bold; font-size:10pt; display:block; margin-top:3px;">${parsed.exporter || companyName}</span>
+              </div>
+              <div>
+                <span style="color:#94a3b8; font-weight:bold; text-transform:uppercase; font-size:8pt; display:block; letter-spacing:0.5px;">Importer / Buyer</span>
+                <span style="color:#0f172a; font-weight:bold; font-size:10pt; display:block; margin-top:3px;">${parsed.importer || formData.buyerName || '—'}</span>
+              </div>
+            </td>
+            <!-- Right Side: Key Reference Box -->
+            <td style="border:none; width:45%; padding:0; vertical-align:top; background:none; text-align:right;">
+              <div style="display:inline-block; width:100%; background-color:#f8fafc; border:1px solid #e2e8f0; padding:12px; text-align:left;">
+                <div style="margin-bottom:8px; border-bottom:1px solid #cbd5e1; padding-bottom:4px;">
+                  <span style="color:#94a3b8; font-weight:bold; text-transform:uppercase; font-size:7.5pt; display:block;">Reference No.</span>
+                  <span style="color:#0f172a; font-weight:bold; font-size:9pt; font-family:monospace; display:block; margin-top:2px;">${parsed.refNumber || '—'}</span>
+                </div>
+                <table style="width:100%; border:none; border-collapse:collapse; background:none;">
+                  <tr style="border:none; background:none;">
+                    <td style="border:none; padding:0; background:none; width:50%; text-align:left; vertical-align:top;">
+                      <span style="color:#94a3b8; font-weight:bold; text-transform:uppercase; font-size:7.5pt; display:block;">Issue Date</span>
+                      <span style="color:#334155; font-weight:bold; font-size:9pt; display:block; margin-top:2px;">${parsed.issueDate || todayStr()}</span>
+                    </td>
+                    <td style="border:none; padding:0; background:none; width:50%; text-align:left; vertical-align:top;">
+                      <span style="color:#94a3b8; font-weight:bold; text-transform:uppercase; font-size:7.5pt; display:block;">Validity / Expiry</span>
+                      <span style="color:#334155; font-weight:bold; font-size:9pt; display:block; margin-top:2px;">${parsed.expiryDate || '—'}</span>
+                    </td>
+                  </tr>
+                </table>
+              </div>
+            </td>
+          </tr>
+        </table>
+        <hr style="border:none; border-top:1px solid #e2e8f0; margin-bottom:20px; margin-top:10px;" />
 
         <!-- Document Body -->
         <div style="font-family:'Segoe UI', Arial, sans-serif;">
@@ -615,7 +1011,7 @@ Requirements:
             </td>
             <td style="border:none; width:50%; text-align:right; font-size:9pt; color:#64748b; padding-top:15px; background:none;">
               <p style="margin:0 0 5px 0; font-weight:bold; text-transform:uppercase; font-size:8pt; color:#94a3b8;">Authorized Signatory</p>
-              <p style="margin:0 0 2px 0; font-family:Georgia, serif; font-style:italic; font-size:14pt; color:#4f46e5;">Praisilia Anastasya</p>
+              <p style="margin:0 0 2px 0; font-family:Georgia, serif; font-style:italic; font-size:14pt; color:#4f46e5;">${currentUser?.name || "Authorized Representative"}</p>
               <p style="margin:0; font-weight:bold; text-transform:uppercase; font-size:8pt; color:#64748b;">${companyName.toUpperCase()}</p>
             </td>
           </tr>
@@ -835,7 +1231,7 @@ Requirements:
 
                 {/* Document Body */}
                 <div className="flex-1 overflow-y-auto max-h-[420px]">
-                  <HighFidelityPaperPreview docText={generatedDoc} docType={docType} businessName={currentUser?.businessName || "PT REMPAH NUSANTARA ABADI"} />
+                  <HighFidelityPaperPreview docText={generatedDoc} docType={docType} businessName={currentUser?.businessName || "PT REMPAH NUSANTARA ABADI"} signatoryName={currentUser?.name || "Authorized Representative"} />
                 </div>
               </div>
             ) : (
