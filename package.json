@@ -1,0 +1,25 @@
+{
+  "name": "exopilot-monorepo",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Exopilot monorepo containing Next.js frontend, Go backend, and Firebase config",
+  "workspaces": [
+    "apps/web",
+    "packages/shared-types"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w apps/web",
+    "build:web": "npm run build -w apps/web",
+    "lint:web": "npm run lint -w apps/web",
+    "build:types": "npm run build -w packages/shared-types",
+    "dev:api": "cd apps/api && go run main.go",
+    "build:api": "cd apps/api && go build -o bin/api",
+    "seed": "node scripts/seed-firebase.mjs",
+    "clean": "rm -rf node_modules package-lock.json apps/web/node_modules apps/web/.next packages/shared-types/dist"
+  },
+  "devDependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "firebase-admin": "^13.10.0",
+    "typescript": "~5.8.2"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Exopilot",
+  "description": "Export Assistant Dashboard and smart digital operating system for Indonesian spice SMEs to manage buyer inquiries, shipment tracking, and AI-powered quotation letter generation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,47 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Firebase credentials (NEVER commit!) - CRITICAL SECURITY
+firebase-service-account.json
+*firebase-adminsdk*.json
+.firebaserc
+*.pem
+*.key
+firebase-key.json
+service-account-key.json
+exopilot-47ce9-firebase-adminsdk-fbsvc-47217095ba.json
+**/*.env*
+**/*key*.json
+**/service-account*.json
+
+# Next.js build outputs
+.next/
+out/
+
+# Go builds
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+apps/api/api
+apps/api/api.exe
+
+# TypeScript and IDE temp files
+.tsbuildinfo
+.eslintcache
+.turbo
+.parcel-cache
+.qwen/
+
+# Secret management files
+.secrets/
+secrets.json
+secrets.yaml

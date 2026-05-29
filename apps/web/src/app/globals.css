@@ -1,0 +1,334 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500;600&display=swap');
+
+@import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Fira Code", ui-monospace, SFMono-Regular, monospace;
+
+  /* Custom premium Pink & Blue palette colors */
+  --color-brand-pink-light: #fff5f7;
+  --color-brand-pink: #fbcfe8;
+  --color-brand-pink-deep: #db2777;
+  --color-brand-blue-light: #dbeafe;
+  --color-brand-blue: #93c5fd;
+  --color-brand-blue-deep: #1d4ed8;
+
+  /* Map standard indigo-based classes to this gorgeous Pink & Blue palette */
+  --color-indigo-50: #fff5f7;      /* Cotton Candy / Soft Pink hover */
+  --color-indigo-100: #ffd6e0;     /* Blush Pink */
+  --color-indigo-200: #fbcfe8;     /* Pastel Pink */
+  --color-indigo-300: #93c5fd;     /* Sky Blue */
+  --color-indigo-500: #3b82f6;     /* Anchor Blue primary */
+  --color-indigo-600: #1d4ed8;     /* Royal Blue active */
+  --color-indigo-700: #1e3a8a;     /* Navy Blue */
+  --color-indigo-800: #172554;     /* Deep Navy */
+  --color-indigo-900: #0f172a;     /* Slate Slate */
+  --color-indigo-950: #020617;     /* Midnight */
+
+  /* Override border radius globally for a crisp, professional, human-designed classic SaaS look */
+  --radius-3xl: 12px;
+  --radius-2xl: 10px;
+  --radius-xl: 8px;
+  --radius-lg: 6px;
+  --radius-md: 4px;
+}
+
+/* Page background — premium light blue-gray with smooth transition */
+.page-bg {
+  background-color: #dbeafe;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.dark .page-bg {
+  background-color: #020617; /* Slate-950 Midnight */
+}
+
+/* Base body dark mode style */
+.dark body {
+  background-color: #020617;
+  color: #f1f5f9;
+}
+
+/* Gradients matching Pink & Blue cotton candy sphere */
+.purple-indigo-gradient {
+  background: linear-gradient(135deg, #ffd6e0 0%, #fbcfe8 35%, #93c5fd 75%, #3b82f6 100%);
+  transition: background 0.3s ease;
+}
+
+.dark .purple-indigo-gradient {
+  background: linear-gradient(135deg, #1e1b4b 0%, #311042 35%, #172554 75%, #1e3a8a 100%);
+}
+
+/* Status badge colors adjusted for Pink & Blue harmony in light & dark */
+.status-new-inquiry { background: #fff5f7; color: #db2777; border-color: #fbcfe8; }
+.dark .status-new-inquiry { background: #500724; color: #fbcfe8; border-color: #9d174d; }
+
+.status-negotiating { background: #dbeafe; color: #1d4ed8; border-color: #93c5fd; }
+.dark .status-negotiating { background: #172554; color: #93c5fd; border-color: #1e40af; }
+
+.status-sample-sent { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; }
+.dark .status-sample-sent { background: #052e16; color: #86efac; border-color: #166534; }
+
+.status-waiting-payment { background: #fef8c3; color: #854d0e; border-color: #fef08a; }
+.dark .status-waiting-payment { background: #422006; color: #fde047; border-color: #713f12; }
+
+.status-closed-deal { background: #ecfdf5; color: #059669; border-color: #a7f3d0; }
+.dark .status-closed-deal { background: #022c22; color: #6ee7b7; border-color: #065f46; }
+
+.status-lost { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
+.dark .status-lost { background: #450a0a; color: #fca5a5; border-color: #7f1d1d; }
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #c7d2e8; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #a0aec0; }
+
+/* Invisible scrollbar for horizontal scroll strips */
+.scrollbar-none { scrollbar-width: none; -ms-overflow-style: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes slideInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideInTop {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes scaleUp {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes popIn {
+  0% { opacity: 0; transform: scale(0.88) translateY(8px); }
+  70% { transform: scale(1.02) translateY(-2px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.animate-fade-in { animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.animate-slide-in-right { animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.animate-slide-in-up { animation: slideInUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.animate-slide-in-top { animation: slideInTop 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.animate-scale-up { animation: scaleUp 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.animate-pop-in { animation: popIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+/* Sparkline */
+.sparkline-container { position: relative; overflow: hidden; }
+.sparkline-container svg { display: block; width: 100%; height: 100%; }
+
+/* Tag chip */
+.tag-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 9999px;
+  font-size: 10px; font-weight: 700; border: 1px solid;
+  transition: all 0.15s;
+}
+
+/* Timeline connector */
+.timeline-line {
+  position: absolute; left: 19px; top: 32px; bottom: 0;
+  width: 2px; background: #E2E8F0;
+}
+
+/* Card shadow — soft blue-tinted */
+.card-shadow {
+  box-shadow:
+    0 2px 12px rgba(99, 120, 200, 0.07),
+    0 1px 3px rgba(99, 120, 200, 0.04);
+}
+
+/* Elevated float card */
+.card-float {
+  box-shadow:
+    0 8px 40px rgba(99, 120, 200, 0.13),
+    0 2px 8px rgba(99, 120, 200, 0.07);
+}
+
+/* Sidebar nav item hover bg */
+.nav-hover { background-color: #fff5f7; }
+
+/* ── Fallback Dark Mode Overrides for Absolute Uniformity ── */
+.dark body {
+  background-color: #020617 !important;
+  color: #e2e8f0 !important;
+}
+
+/* Force dark layout panels */
+.dark aside,
+.dark header,
+.dark .bg-white,
+.dark .card-shadow,
+.dark .card-float {
+  background-color: #0f172a !important; /* bg-slate-900 */
+  border-color: #1e293b !important; /* border-slate-800 */
+}
+
+/* Force dark mode sub-panel cards */
+.dark .bg-slate-50,
+.dark .bg-slate-50\/50,
+.dark .bg-\[\#f5f7fc\],
+.dark .bg-\[\#f3f6fc\],
+.dark .bg-\[\#f9fafc\],
+.dark .bg-slate-100 {
+  background-color: #1e293b !important; /* bg-slate-800 */
+  border-color: #334155 !important; /* border-slate-700 */
+}
+
+/* Border shade overrides */
+.dark .border-slate-150,
+.dark .border-slate-100,
+.dark .border-slate-200 {
+  border-color: #1e293b !important;
+}
+
+.dark .border-dashed {
+  border-color: #334155 !important;
+}
+
+/* Form input elements override */
+.dark input,
+.dark select,
+.dark textarea {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+  color: #f1f5f9 !important;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #64748b !important;
+}
+
+/* Native select options — must be themed separately */
+.dark option {
+  background-color: #1e293b;
+  color: #f1f5f9;
+}
+
+/* Text elements color mapping */
+.dark .text-slate-800,
+.dark .text-slate-700,
+.dark .text-slate-900 {
+  color: #f1f5f9 !important;
+}
+
+.dark .text-slate-600 {
+  color: #cbd5e1 !important;
+}
+
+.dark .text-slate-500,
+.dark .text-slate-400 {
+  color: #94a3b8 !important;
+}
+
+.dark .text-slate-300 {
+  color: #64748b !important;
+}
+
+/* Hover overrides */
+.dark .hover\:bg-slate-50:hover,
+.dark .hover\:bg-slate-100:hover,
+.dark .hover\:bg-indigo-50:hover {
+  background-color: #1e293b !important;
+}
+
+.dark .hover\:border-slate-300:hover,
+.dark .hover\:border-slate-350:hover {
+  border-color: #475569 !important;
+}
+
+/* Tab Active capsule custom highlight override */
+.dark button.bg-\[\#eff6ff\],
+.dark div.bg-\[\#eff6ff\] {
+  background-color: rgba(30, 58, 138, 0.4) !important;
+  border-color: rgba(147, 197, 253, 0.3) !important;
+  color: #93c5fd !important;
+}
+
+/* Inactive pill tabs in dark mode */
+.dark button.bg-\[\#f3f6fc\],
+.dark div.bg-\[\#f3f6fc\] {
+  background-color: #1e293b !important;
+  color: #94a3b8 !important;
+}
+
+/* bg-slate-50/60 dark fix */
+.dark .bg-slate-50\/60 {
+  background-color: #1e293b !important;
+}
+
+/* Scrollbar dark mode */
+.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Timeline line dark */
+.dark .timeline-line {
+  background: #1e293b;
+}
+
+/* ── NUCLEAR DARK MODE TEXT FIX ──
+   Force ALL text-slate-* classes to light colors in dark mode,
+   including on inputs, textareas, selects, and labels.
+   Uses high-specificity selectors to beat component-level classes. */
+
+.dark [class*="text-slate-800"],
+.dark [class*="text-slate-900"],
+.dark [class*="text-slate-700"] {
+  color: #f1f5f9 !important;
+}
+
+.dark [class*="text-slate-600"] {
+  color: #cbd5e1 !important;
+}
+
+.dark [class*="text-slate-500"] {
+  color: #94a3b8 !important;
+}
+
+.dark [class*="text-slate-400"] {
+  color: #94a3b8 !important;
+}
+
+.dark [class*="text-slate-300"] {
+  color: #64748b !important;
+}
+
+/* Force dark mode on form elements regardless of text color classes */
+.dark input[class*="text-slate"],
+.dark textarea[class*="text-slate"],
+.dark select[class*="text-slate"] {
+  color: #f1f5f9 !important;
+}
+
+/* Labels and headings inside dark mode cards/panels */
+.dark label[class*="text-slate"] {
+  color: #94a3b8 !important;
+}
+
+/* Placeholder text in dark mode */
+.dark input[class*="text-slate"]::placeholder,
+.dark textarea[class*="text-slate"]::placeholder {
+  color: #64748b !important;
+}

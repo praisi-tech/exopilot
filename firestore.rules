@@ -1,0 +1,101 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ============================================================
+    // USER PROFILE RULES
+    // ============================================================
+    // Users can only read their own profile, create on signup, update own settings (but NOT role escalation)
+    
+    match /profiles/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId
+                      && request.resource.data.keys().hasAll(['id', 'company_name']);
+      allow update: if request.auth != null && request.auth.uid == userId
+                      // Prevent privilege escalation: role cannot be changed
+                      && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'admin'])
+                      && request.resource.data.id == userId;
+      allow delete: if false; // Only backend admins can delete profiles via Firebase Admin SDK
+    }
+
+    // ============================================================
+    // BUYER INQUIRIES - User scoped
+    // ============================================================
+    // Each inquiry must have a user_id field matching the authenticated user
+    
+    match /buyer_inquiries/{docId} {
+      allow read: if request.auth != null && resource.data.user_id == request.auth.uid;
+      allow create: if request.auth != null 
+                      && request.resource.data.user_id == request.auth.uid
+                      && request.resource.data.keys().hasAll(['user_id', 'buyer_name', 'country']);
+      allow update: if request.auth != null && resource.data.user_id == request.auth.uid
+                      // Prevent escalation: user_id cannot be changed
+                      && request.resource.data.user_id == request.auth.uid;
+      allow delete: if request.auth != null && resource.data.user_id == request.auth.uid;
+    }
+
+    // ============================================================
+    // SHIPMENT TRACKER - User scoped
+    // ============================================================
+    // Each shipment must be owned by the authenticated user
+    
+    match /shipment_tracker/{docId} {
+      allow read: if request.auth != null && resource.data.user_id == request.auth.uid;
+      allow create: if request.auth != null
+                      && request.resource.data.user_id == request.auth.uid
+                      && request.resource.data.keys().hasAll(['user_id', 'container_number']);
+      allow update: if request.auth != null && resource.data.user_id == request.auth.uid
+                      && request.resource.data.user_id == request.auth.uid;
+      allow delete: if request.auth != null && resource.data.user_id == request.auth.uid;
+    }
+
+    // ============================================================
+    // SUPPLIERS - User scoped
+    // ============================================================
+    
+    match /suppliers/{docId} {
+      allow read: if request.auth != null && resource.data.user_id == request.auth.uid;
+      allow create: if request.auth != null
+                      && request.resource.data.user_id == request.auth.uid
+                      && request.resource.data.keys().hasAll(['user_id', 'name']);
+      allow update: if request.auth != null && resource.data.user_id == request.auth.uid
+                      && request.resource.data.user_id == request.auth.uid;
+      allow delete: if request.auth != null && resource.data.user_id == request.auth.uid;
+    }
+
+    // ============================================================
+    // BUYER CRM - User scoped
+    // ============================================================
+    
+    match /buyer_crm/{docId} {
+      allow read: if request.auth != null && resource.data.user_id == request.auth.uid;
+      allow create: if request.auth != null
+                      && request.resource.data.user_id == request.auth.uid
+                      && request.resource.data.keys().hasAll(['user_id', 'buyer_name']);
+      allow update: if request.auth != null && resource.data.user_id == request.auth.uid
+                      && request.resource.data.user_id == request.auth.uid;
+      allow delete: if request.auth != null && resource.data.user_id == request.auth.uid;
+    }
+
+    // ============================================================
+    // NEGOTIATION NOTES - User scoped
+    // ============================================================
+    
+    match /negotiation_notes/{docId} {
+      allow read: if request.auth != null && resource.data.user_id == request.auth.uid;
+      allow create: if request.auth != null
+                      && request.resource.data.user_id == request.auth.uid
+                      && request.resource.data.keys().hasAll(['user_id', 'buyer_name']);
+      allow update: if request.auth != null && resource.data.user_id == request.auth.uid
+                      && request.resource.data.user_id == request.auth.uid;
+      allow delete: if request.auth != null && resource.data.user_id == request.auth.uid;
+    }
+
+    // ============================================================
+    // DEFAULT DENY ALL - Catch-all protection
+    // ============================================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
